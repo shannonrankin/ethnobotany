@@ -7,8 +7,8 @@ project:
 website: 
   page-navigation: true
   title: "NOAA quarto simple" 
-  site-url: "https://sael-swfsc.github.io/PAM_template_ResearchCompendium/" 
-  repo-url: "https://github.com/SAEL-SWFSC/PAM_template_ResearchCompendium"
+  site-url: "https://github.com/shannonrankin/ethnobotany" 
+  repo-url: "https://github.com/shannonrankin/ethnobotany"
   repo-actions: [edit, source, issue]
   favicon: images/favicon.ico
   
@@ -24,11 +24,11 @@ website:
     align: center
     tools: 
       - icon: globe
-        href: https://nmfs-ost.github.io/PAM_National_NMFS_Network
-        text: "NMFS National Passive Acoustic Monitoring Network"
+        href: https://github.com/shannonrankin/ethnobotany
+        text: "Ethnobotany Projects"
       - icon: github
-        href: https://github.com/SAEL-SWFSC/PAM_template_ResearchCompendium
-        text: "NMFS PAM SI Research Compendium Template"
+        href: https://github.com/shannonrankin/ethnobotany
+        text: "Ethnobotany Projects"
 
     style: "docked"
     search: true
