@@ -1,60 +1,51 @@
-project: 
+project:
   type: website
   output-dir: docs
-  render: 
+  render:
     - "*.qmd"
 
-website: 
+website:
+  title: "Kumeyaay Ethnobotany"
   page-navigation: true
-  title: "NOAA quarto simple" 
-  site-url: "https://github.com/shannonrankin/ethnobotany" 
+  site-url: "https://shannonrankin.github.io/ethnobotany"
   repo-url: "https://github.com/shannonrankin/ethnobotany"
   repo-actions: [edit, source, issue]
   favicon: images/favicon.ico
-  
+
   page-footer:
     right: "This page is built with [Quarto](https://quarto.org/)."
     left: "&copy; CC-1.0"
-  
+
   sidebar:
     background: "#D9E3E4"
-    logo: "https://upload.wikimedia.org/wikipedia/commons/7/79/NOAA_logo.svg"
-    favicon: images/favicon.ico
+    logo: "https://www.cuyamaca.edu/_resources/assets/images/faculty-staff-resources/CC-LogoPrimary-1colorRGB.jpg"
     pinned: true
     align: center
-    tools: 
+    style: "docked"
+    search: true
+    collapse-level: 1
+    tools:
       - icon: globe
-        href: https://github.com/shannonrankin/ethnobotany
+        href: https://shannonrankin.github.io/ethnobotany
         text: "Ethnobotany Projects"
       - icon: github
         href: https://github.com/shannonrankin/ethnobotany
         text: "Ethnobotany Projects"
-
-    style: "docked"
-    search: true
-    collapse-level: 1
     contents:
       - href: index.qmd
         text: Home
-      - href: content/folderStructure.qmd
-        text: "Folder Structure & Content"
-      - href: content/qmd_withCode.qmd
-        text: "Adding Executable Code"
+      - href: content/utility_dashboard.qmd
+        text: "Utility Life Cycle"
 
-
-        
 format:
   html:
     theme:
-      light: [cosmo, theme.scss] 
+      light: [cosmo, theme.scss]
       dark: [cosmo, theme-dark.scss]
     code-copy: true
     code-overflow: wrap
     toc: true
 
-
-filters:
-  - include-files.lua
-  - quarto
-
-  
+resources:
+  - data/
+  - content/images/

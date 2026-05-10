@@ -1,0 +1,474 @@
+---
+title: "Ethnobotany Life Cycle"
+format:
+  html:
+    page-layout: full
+    toc: false
+    css: dashboard.css
+    include-in-header:
+      text: |
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| output: false
+library(here)
+
+# ── Read CSV ──────────────────────────────────────────────────────────────────
+df <- read.csv(
+  here("data", "ethnobotany_utilitarian.csv"),
+  fileEncoding = "windows-1252",
+  stringsAsFactors = FALSE,
+  na.strings = ""
+)
+df[is.na(df)] <- ""
+ojs_define(rawData = df)
+
+# ── Scan content/images/ for photo files ─────────────────────────────────────
+# Collects all image files (jpg, jpeg, png, webp, gif) and passes the list
+# to OJS so the gallery function can match by plant name + stage keyword.
+img_dir <- here("content", "images")
+img_exts <- c("jpg", "jpeg", "png", "webp", "gif", "JPG", "JPEG", "PNG")
+img_pattern <- paste0("\\.(", paste(img_exts, collapse = "|"), ")$")
+
+all_images <- list.files(
+  path       = img_dir,
+  pattern    = img_pattern,
+  full.names = FALSE   # just the filename, not the full path
+)
+
+# Pass as a simple character vector — OJS receives it as an array of strings
+ojs_define(imageFiles = all_images)
+```
+
+```{ojs}
+//| output: false
+
+// ojs_define() sends R data frames as column-oriented {col:[vals]} objects.
+// transpose() converts to row-oriented [{col:val},...] that .map()/.filter() expect.
+data = transpose(rawData)
+
+// ── Cascading dropdowns ───────────────────────────────────────────────────────
+viewof selectedCategory = Inputs.select(
+  ["All", ...new Set(data.map(d => d.utility_category))],
+  { label: "Category", value: "All" }
+)
+
+viewof selectedType = Inputs.select(
+  (() => {
+    const types = data
+      .filter(d => selectedCategory === "All" || d.utility_category === selectedCategory)
+      .map(d => d.utility_type);
+    return ["All", ...new Set(types)];
+  })(),
+  { label: "Type", value: "All" }
+)
+
+viewof selectedItem = Inputs.select(
+  (() => {
+    const items = data
+      .filter(d =>
+        (selectedCategory === "All" || d.utility_category === selectedCategory) &&
+        (selectedType === "All" || d.utility_type === selectedType)
+      )
+      .map(d => d.utility_name);
+    return [...new Set(items)];
+  })(),
+  { label: "Item (Kumeyaay)" }
+)
+
+filteredRows = data.filter(d =>
+  (selectedCategory === "All" || d.utility_category === selectedCategory) &&
+  (selectedType === "All" || d.utility_type === selectedType) &&
+  d.utility_name === selectedItem
+)
+```
+
+```{ojs}
+//| output: true
+
+// ── Control bar ───────────────────────────────────────────────────────────────
+html`<div class="dash-controls">
+  <div class="control-group">
+    <span class="control-label">Category</span>
+    ${viewof selectedCategory}
+  </div>
+  <div class="control-group">
+    <span class="control-label">Type</span>
+    ${viewof selectedType}
+  </div>
+  <div class="control-group">
+    <span class="control-label">Item (Kumeyaay)</span>
+    ${viewof selectedItem}
+  </div>
+</div>`
+```
+
+```{ojs}
+//| output: true
+
+// ── Dashboard: header + plant toggle + life cycle SVG ────────────────────────
+// All interactivity (slideout, node highlighting, plant toggle) is plain JS —
+// no OJS mutable state — so CSS transitions work reliably.
+{
+  const row = filteredRows[0];
+  if (!row) return html`<div class="eb-no-data">Select an item to begin.</div>`;
+
+  let activePlantIdx = 0;
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+  const empty = v => !v || String(v).trim() === "" || String(v).trim().toLowerCase() === "add more";
+
+  function field(lbl, val) {
+    if (empty(val)) return "";
+    return `<div class="eb-field">
+      ${lbl ? `<span class="eb-field-label">${lbl}</span>` : ""}
+      <p>${val}</p>
+    </div>`;
+  }
+
+  function resources(text) {
+    if (empty(text)) return "";
+    const links = String(text).split(/,\s*/).filter(Boolean).map(item => {
+      const m = item.match(/^(.+?)\((.+?)\)$/);
+      if (!m) return null;
+      let url = m[2].trim();
+      if (!url.startsWith("http")) url = "https://" + url;
+      return `<a href="${url}" target="_blank" rel="noopener">${m[1].trim()}</a>`;
+    }).filter(Boolean);
+    if (!links.length) return "";
+    return `<div class="eb-resources">
+      <span class="eb-resources-label">Resources</span>
+      ${links.join(" &bull; ")}
+    </div>`;
+  }
+
+  // Clean plant name for filename matching:
+  // strips curly quotes, smart apostrophes, and other non-alphanumeric chars
+  // so mu’ii in the data matches muii in filenames.
+  function cleanName(name) {
+    return name
+      .replace(/[‘’‚‛′‵'`]/g, "") // remove quote variants
+      .replace(/[^a-zA-Z0-9_\-]/g, "")                         // remove anything else non-safe
+      .toLowerCase();
+  }
+
+  function gallery(plantName, keyword) {
+    const clean = cleanName(plantName);
+    // imageFiles is the array of filenames scanned by R at render time
+    const matches = imageFiles.filter(f => {
+      const fl = f.toLowerCase();
+      return fl.includes(clean) && fl.includes(keyword.toLowerCase());
+    });
+
+    if (matches.length === 0) {
+      return `<div class="eb-gallery">
+        <p>📸 No photos found yet. Add images containing
+        <strong>${clean}</strong> and <strong>${keyword}</strong>
+        in their filename to <code>content/images/</code>.</p>
+      </div>`;
+    }
+
+    const imgs = matches.map(f =>
+      `<a href="images/${f}" target="_blank">
+        <img src="images/${f}" alt="${f}" loading="lazy"/>
+      </a>`
+    ).join("");
+
+    return `<div class="eb-photo-grid">${imgs}</div>`;
+  }
+
+  function buildPanelHTML(stageId, r) {
+    const p = r.name_kumeyaay;
+    switch (stageId) {
+      case "seeds": return `
+        <h2 class="eb-h2">Seeds</h2>
+        ${field("", r.description_seed)}
+        <h3 class="eb-h3">Seed Photos</h3>${gallery(p, "seeds")}
+        <h2 class="eb-h2">Flowers</h2>
+        ${field("", r.description_flower)}
+        <h3 class="eb-h3">Flower Photos</h3>${gallery(p, "flowers")}
+        ${resources(r.seed_resources)}`;
+      case "plant": return `
+        <h2 class="eb-h2">Plant</h2>
+        ${field("", r.description_plant)}
+        ${field("Leaves", r.description_leaf)}
+        ${field("Habitat", r.description_habitat)}
+        <h3 class="eb-h3">Plant Photos</h3>${gallery(p, "plant")}
+        ${resources(r.plant_resources)}`;
+      case "harvest": return `
+        <h2 class="eb-h2">Harvest</h2>
+        ${field("Primary Harvest Method", r.harvest_primary)}
+        ${field("Secondary Uses", r.harvest_secondary)}
+        <h3 class="eb-h3">Harvest Photos</h3>${gallery(p, "harvest")}
+        ${resources(r.harvest_resources)}`;
+      case "create": return `
+        <h2 class="eb-h2">Create</h2>
+        ${field("How to Build", r.music_build)}
+        ${field("How to Play", r.music_description)}
+        ${field("Examples & Media", r.music_examples)}
+        ${resources(r.create_resources)}`;
+      case "culture": return `
+        <h2 class="eb-h2">Culture</h2>
+        ${field("Music & Culture", r.culture_music)}
+        ${field("Plant in Culture", r.culture_botany)}
+        ${resources(r.culture_resources)}`;
+      case "connection": return `
+        <h2 class="eb-h2">Connection</h2>
+        ${field("Cultural Connection", r.ethnobotany_culture)}
+        ${field("Cultivation & Stewardship", r.ethnobotany_cultivate)}
+        ${resources(r.connection_resources)}`;
+      default: return "";
+    }
+  }
+
+  const stageNames = {
+    seeds: "Seeds & Flowers", plant: "Plant", harvest: "Harvest",
+    create: "Create", culture: "Culture", connection: "Connection"
+  };
+
+  // ── Slideout: created once, persists across re-renders ──────────────────────
+  let slideoutEl = document.getElementById("eb-slideout");
+  if (!slideoutEl) {
+    slideoutEl = document.createElement("div");
+    slideoutEl.id = "eb-slideout";
+    slideoutEl.innerHTML = `
+      <div class="eb-toolbar">
+        <span class="eb-toolbar-title" id="eb-stage-label"></span>
+        <div class="eb-toolbar-btns">
+          <button class="eb-btn" id="eb-expand" title="Toggle fullscreen">⛶</button>
+          <button class="eb-btn" id="eb-close">✕</button>
+        </div>
+      </div>
+      <div class="eb-body" id="eb-panel-body"></div>`;
+    document.body.appendChild(slideoutEl);
+
+    document.getElementById("eb-expand").addEventListener("click", () => {
+      slideoutEl.classList.toggle("fullscreen");
+    });
+    document.getElementById("eb-close").addEventListener("click", () => {
+      slideoutEl.classList.remove("open");
+      document.querySelectorAll(".eb-node rect").forEach(r => {
+        r.setAttribute("fill", "#F5ECD7");
+        r.setAttribute("stroke", "#A07850");
+      });
+    });
+  }
+
+  function openSlideout(stageId) {
+    const r = filteredRows[activePlantIdx] || filteredRows[0];
+    document.getElementById("eb-stage-label").textContent = stageNames[stageId] || stageId;
+    document.getElementById("eb-panel-body").innerHTML = buildPanelHTML(stageId, r);
+    slideoutEl.classList.add("open");
+  }
+
+  // ── Header ──────────────────────────────────────────────────────────────────
+  function buildHeader(r) {
+    const el = document.createElement("div");
+    el.className = "dash-header";
+    el.innerHTML = `
+      <div class="header-main">
+        <span class="header-category">${r.utility_category}</span>
+        <h1 class="header-title">${r.utility_name}
+          <span class="header-type">(${r.utility_type})</span>
+        </h1>
+      </div>
+      <div class="header-meta">
+        <div class="meta-kumeyaay">${r.name_kumeyaay}</div>
+        <div class="meta-row">
+          ${r.name_common}
+          ${r.name_sci ? ` &mdash; <em>${r.name_sci}</em>` : ""}
+        </div>
+        ${r.name_family ? `<div class="meta-row"><span class="meta-label">Family:</span> ${r.name_family}</div>` : ""}
+        ${!empty(r.name_history) ? `<div class="meta-history">${r.name_history}</div>` : ""}
+      </div>`;
+    return el;
+  }
+
+  // ── SVG life cycle ──────────────────────────────────────────────────────────
+  const stages = [
+    { id: "seeds",      label: "Seeds",      icon: "seeds_icon",      angle: 270 },
+    { id: "plant",      label: "Plant",      icon: "plant_icon",      angle: 330 },
+    { id: "harvest",    label: "Harvest",    icon: "harvest_icon",    angle: 30  },
+    { id: "create",     label: "Create",     icon: "create_icon",     angle: 90  },
+    { id: "culture",    label: "Culture",    icon: "culture_icon",    angle: 150 },
+    { id: "connection", label: "Connection", icon: "connection_icon", angle: 210 },
+  ];
+  const CX = 220, CY = 220, R = 148, SZ = 60;
+  const svgNS = "http://www.w3.org/2000/svg";
+
+  function cwArc(fromDeg, toDeg, rad) {
+    const PAD = 22;
+    const a1 = ((fromDeg + PAD) % 360) * Math.PI / 180;
+    const a2 = ((toDeg - PAD + 360) % 360) * Math.PI / 180;
+    const x1 = CX + rad * Math.cos(a1), y1 = CY + rad * Math.sin(a1);
+    const x2 = CX + rad * Math.cos(a2), y2 = CY + rad * Math.sin(a2);
+    let span = (toDeg - PAD) - (fromDeg + PAD);
+    if (span < 0) span += 360;
+    return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${rad} ${rad} 0 ${span > 180 ? 1 : 0} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+  }
+
+  const svgEl = document.createElementNS(svgNS, "svg");
+  svgEl.setAttribute("viewBox", "0 0 440 440");
+  svgEl.classList.add("lifecycle-svg");
+
+  const currentRow = filteredRows[activePlantIdx] || filteredRows[0];
+
+  svgEl.innerHTML = `
+    <defs>
+      <marker id="eb-arrow" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+        <path d="M0,0 L0,7 L7,3.5 z" fill="#A07850" opacity="0.8"/>
+      </marker>
+      <filter id="eb-shadow" x="-25%" y="-25%" width="150%" height="150%">
+        <feDropShadow dx="1" dy="2" stdDeviation="3" flood-color="#8B5E3C" flood-opacity="0.18"/>
+      </filter>
+    </defs>
+    <text x="${CX}" y="${CY-18}" text-anchor="middle"
+      font-family="'Jost',sans-serif" font-size="9" letter-spacing="3" fill="#7a6248"
+      style="text-transform:uppercase">KUMEYAAY</text>
+    <text x="${CX}" y="${CY+6}" text-anchor="middle"
+      font-family="'Cormorant Garamond',Georgia,serif"
+      font-size="21" font-weight="700" fill="#5c3a1e">Life Cycle</text>
+    <text id="eb-center-name" x="${CX}" y="${CY+26}" text-anchor="middle"
+      font-family="'Cormorant Garamond',Georgia,serif"
+      font-size="14" font-style="italic" fill="#8B5E3C"
+      >${currentRow.utility_name}</text>
+    ${stages.map((s, i) => {
+      const next = stages[(i + 1) % stages.length];
+      return `<path d="${cwArc(s.angle, next.angle, R)}"
+        fill="none" stroke="#A07850" stroke-width="2" stroke-dasharray="5,4"
+        opacity="0.7" marker-end="url(#eb-arrow)"/>`;
+    }).join("")}`;
+
+  let activeStageId = null;
+
+  stages.forEach(s => {
+    const rad = s.angle * Math.PI / 180;
+    const nx = CX + R * Math.cos(rad), ny = CY + R * Math.sin(rad);
+    const g = document.createElementNS(svgNS, "g");
+    g.classList.add("eb-node");
+    g.dataset.stage = s.id;
+    g.setAttribute("transform", `translate(${(nx - SZ/2).toFixed(1)},${(ny - SZ/2).toFixed(1)})`);
+    g.style.cursor = "pointer";
+    g.innerHTML = `
+      <rect width="${SZ}" height="${SZ}" rx="30"
+        fill="#F5ECD7" stroke="#A07850" stroke-width="2" filter="url(#eb-shadow)"/>
+      <image href="images/${s.icon}.svg" x="6" y="6" width="${SZ-12}" height="${SZ-12}"/>
+      <text x="${SZ/2}" y="${SZ+16}" text-anchor="middle"
+        font-family="'Jost',sans-serif" font-size="10" font-weight="600"
+        style="text-transform:uppercase" fill="#5c3a1e">${s.label}</text>`;
+
+    g.addEventListener("click", () => {
+      if (activeStageId === s.id) {
+        activeStageId = null;
+        slideoutEl.classList.remove("open");
+        svgEl.querySelectorAll(".eb-node rect").forEach(r => {
+          r.setAttribute("fill", "#F5ECD7");
+          r.setAttribute("stroke", "#A07850");
+        });
+      } else {
+        activeStageId = s.id;
+        svgEl.querySelectorAll(".eb-node").forEach(node => {
+          const rect = node.querySelector("rect");
+          const isThis = node.dataset.stage === s.id;
+          rect.setAttribute("fill", isThis ? "#8B5E3C" : "#F5ECD7");
+          rect.setAttribute("stroke", isThis ? "#5c3a1e" : "#A07850");
+        });
+        openSlideout(s.id);
+      }
+    });
+
+    svgEl.appendChild(g);
+  });
+
+  // ── Plant toggle ────────────────────────────────────────────────────────────
+  function buildToggle() {
+    if (filteredRows.length <= 1) return null;
+    const div = document.createElement("div");
+    div.className = "plant-toggle";
+    const lbl = document.createElement("span");
+    lbl.className = "toggle-label";
+    lbl.textContent = "Plant:";
+    div.appendChild(lbl);
+
+    filteredRows.forEach((r, i) => {
+      const btn = document.createElement("button");
+      btn.className = "toggle-btn" + (i === activePlantIdx ? " active" : "");
+      btn.innerHTML = `${r.name_kumeyaay} <em>(${r.name_common})</em>`;
+      btn.addEventListener("click", () => {
+        activePlantIdx = i;
+        activeStageId = null;
+        slideoutEl.classList.remove("open");
+        svgEl.querySelectorAll(".eb-node rect").forEach(r2 => {
+          r2.setAttribute("fill", "#F5ECD7");
+          r2.setAttribute("stroke", "#A07850");
+        });
+        div.querySelectorAll(".toggle-btn").forEach((b, j) => {
+          b.classList.toggle("active", j === i);
+        });
+        // Update centre label and header
+        const nameEl = document.getElementById("eb-center-name");
+        if (nameEl) nameEl.textContent = filteredRows[i].utility_name;
+        const oldHeader = root.querySelector(".dash-header");
+        if (oldHeader) oldHeader.replaceWith(buildHeader(filteredRows[i]));
+      });
+      div.appendChild(btn);
+    });
+    return div;
+  }
+
+  // ── Assemble ─────────────────────────────────────────────────────────────────
+  const headerDiv = buildHeader(currentRow);
+  const toggleDiv = buildToggle();
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "lifecycle-wrapper";
+  wrapper.appendChild(svgEl);
+  const hint = document.createElement("p");
+  hint.className = "cycle-hint";
+  hint.textContent = "Click a stage to explore";
+  wrapper.appendChild(hint);
+
+  const dashBody = document.createElement("div");
+  dashBody.className = "dash-body";
+  dashBody.appendChild(wrapper);
+
+  const root = document.createElement("div");
+  root.className = "dash-root";
+  root.appendChild(headerDiv);
+  if (toggleDiv) root.appendChild(toggleDiv);
+  root.appendChild(dashBody);
+
+  return root;
+}
+```
+
+---
+
+## How to Use {#instructions}
+
+1. **Select a Category** (e.g. *music*), **Type** (e.g. *flute*), and **Item** from the control bar
+2. If an item uses **multiple plants**, toggle between them with the buttons above the circle
+3. **Click any stage** on the life cycle to open the detail panel on the right
+4. Use **⛶** to expand fullscreen · **✕** to close
+
+---
+
+## Adding New Data
+
+Simply edit `data/ethnobotany_utilitarian.csv` and re-render — the dashboard updates automatically.
+
+**Important:** Keep the file encoding as **Windows-1252** (the default when saving from Excel on Windows). If you switch to UTF-8, update the `fileEncoding` argument in the R chunk at the top of this file.
+
+---
+
+## Adding Photos
+
+Place photos in `content/images/` named: `[name_kumeyaay]_[stage]_description.jpg`
+
+Examples: `kupall_seeds_berries.jpg` · `kupall_plant_shrub.jpg` · `kupall_harvest_branch.jpg`
